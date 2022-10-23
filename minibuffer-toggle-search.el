@@ -1,179 +1,182 @@
-;;; minibuffer-toggle-search.el -*- lexical-binding: t; -*-
+;;; minibuffer-toggle-search.el --- minibuffer toggle current search -*- lexical-binding: t; -*-
 
-;; 初始化文本
-(defvar minibuffer-toggle-search-initial-string nil)
+;;; Commentary:
+;;; Code:
 
+(defvar minibuffer-toggle-search-initial-string nil
+  "初始化文本.")
+
+;; (defvar minibuffer-toggle-search-command-alist
+;;   '((consult-line :toggle 'consult-line-multi
+;;                   :initial '(region word url))
+;;     (consult-line-multi :toggle 'consult-ripgrep
+;;                         :initial 'symbol)
+;;     (isearch-forward :toggle 'consult-line
+;;                      :thing 'symbol)
+;;     (evil-ex-search-forward :toggle 'consult-line
+;;                             :initial 'word)
+;;     (consult-ripgrep :toggle 'change-directory
+;;                      :prefix "#"
+;;                      :append nil)
+;;     (helpful-function :toggle 'helpful-variable)
+;;     (helpful-variable :toggle 'describe-face)
+;;     (lmm/SPC-SPC :toggle 'helpful-function)))
 (defvar minibuffer-toggle-search-command-alist
-  '((consult-line :toggle 'consult-line-multi
-                  :initial '(region word url))
-    (consult-line-multi :toggle 'consult-ripgrep
-                        :initial 'symbol)
-    (isearch-forward :toggle 'consult-line
-                     :thing 'symbol)
-    (evil-ex-search-forward :toggle 'consult-line
-                            :initial 'word)
-    (consult-ripgrep :toggle 'change-directory
-                     :prefix "#"
-                     :append nil)
-    (helpful-function :toggle 'helpful-variable)
-    (helpful-variable :toggle 'describe-face)
-    (lmm/SPC-SPC :toggle 'helpful-function)))
+  nil
+  "Command configuration alist for `minibuffer-toggle-search'.")
 
-;; 当前minibuffer 命令
-(defvar minibuffer-toggle-search-current-command nil)
+;; 当前minibuffer 命令, from `this-command'
+(defvar minibuffer-toggle-search-current-command nil
+  "最后调用minibuffer 的命令.")
 
-;; 默认为可删除默认文本
 (defvar minibuffer-toggle-search-default-text t
-  "")
+  "默认为可删除默认文本.")
 
 (defface minibuffer-toggle-search-default-text-face
   '((t :inherit shadow))
   "Face use minibuffer inserted default text.")
 
-(defun minibuffer-ts-customize-put (cmds prop form)
+(defun minibuffer-toggle-search-customize-put (cmds prop form)
   "Set property PROP to FORM of commands CMDS."
   (dolist (cmd cmds)
     (cond
      ((functionp cmd)
       (setf (alist-get cmd minibuffer-toggle-search-command-alist)
-            ;; (let ((alist (alist-get cmd minibuffer-toggle-search-command-alist)))
-            ;;   (when minibuffer-toggle-search-default-text
-            ;;     (plist-put alist :default t))
-            ;;   (plist-put alist prop form))
             (plist-put (alist-get cmd minibuffer-toggle-search-command-alist) prop form)
             ))
      (t (user-error "%s is neither a command"
                     cmd))))
   nil)
 
-(defmacro minibuffer-ts-customize (&rest args)
+(defmacro minibuffer-toggle-search-customize (&rest args)
   "Set properties of commands or sources.
 ARGS is a list of commands or sources followed by the list of keyword-value
-pairs."
+pairs.
+all keyword:
+:toggle toggle to cmd.
+:prefix minibuffer default prefix string.
+:default shadow text. insert any text to delete default text.
+Example: (minibuffer-toggle-search-customize
+ execute-extended-command
+ :toggle 'helpful-callable
+ evil-ex-search-forward
+ :toggle 'consult-ripgrep
+ :default t
+ :initial nil
+ :key ?/
+ :prefix nil
+ consult-grep
+ :toggle 'consult-ripgrep
+ :key ?g
+ :prefix \"#\"
+ )."
   (let ((setter))
     (while args
       (let ((cmds (seq-take-while (lambda (x) (not (keywordp x))) args)))
         (setq args (seq-drop-while (lambda (x) (not (keywordp x))) args))
         (while (keywordp (car args))
-          (push `(minibuffer-ts-customize-put ',cmds ,(car args) ',(cadr args)) setter)
+          (push `(minibuffer-toggle-search-customize-put ',cmds ,(car args) ',(cadr args)) setter)
           (setq args (cddr args)))))
     (macroexp-progn setter)))
 
-(minibuffer-ts-customize
- evil-ex-search-forward
- :default t
- :initial 'symbol
- consult-ripgrep
- :initial "he"
- :prefix "#"
- consult-org-heading
- consult-line
- :toggle 'consult-line-multi
- :default t
- :initial (thing-at-point 'symbol t)
- consult-line-multi
- :toggle 'consult-line-ripgrep
- )
-
-(defun minibuffer-toggle-search (&optional argu)
-  "search in current buffer or current directory
-      -> search in all buffer or up directory."
+;; (minibuffer-toggle-search-customize
+;;  execute-extended-command
+;;  :toggle 'helpful-callable
+;;  evil-ex-search-forward
+;;  :toggle 'consult-ripgrep
+;;  :default t
+;;  :initial nil
+;;  :key ?/
+;;  :prefix nil
+;;  consult-grep
+;;  :toggle 'consult-ripgrep
+;;  :key ?g
+;;  :prefix "#"
+;;  consult-ripgrep
+;;  :initial nil
+;;  :key ?r
+;;  :prefix "#"
+;;  consult-line-multi
+;;  :toggle 'consult-ripgrep
+;;  consult-line
+;;  :toggle 'consult-ripgrep
+;;  :initial 'symbol
+;;  :default t
+;;  :initial (thing-at-point 'symbol t)
+;;  )
+(defun minibuffer-toggle-search ()
+  "Search in current buffer or current directory.
+toggle to search in all buffer or up directory."
   (interactive "P")
-  (when (minibufferp)
-    (cond
-     ((equal 'minibuffer-toggle-search this-command)
-      (let* ((alist (mapcar (lambda (x) (with-minibuffer-selected-window
-                                         (eval x 'lexical)))
-                           (alist-get minibuffer-toggle-search-current-command
-                                      minibuffer-toggle-search-command-alist)))
-            (string (ignore-errors
-                        (buffer-substring-no-properties (minibuffer-prompt-end)
-                                                        (point-max))))
-            (command (plist-get alist :toggle)))
-        ;; (when argu
-        ;;   (setq command (cadr minibuffer-toggle-search-current-command))
-        ;;   (setq minibuffer-toggle-search-current-command
-        ;;         (append (car minibuffer-toggle-search-current-command)
-        ;;         (cddr minibuffer-toggle-search-current-command))))
-        ;; (cddr '(a b c d))
-        (when-let ((command (plist-get alist :toggle)))
-          (run-at-time 0 nil (lambda (com)
-                               (setq this-command com
-                                     minibuffer-toggle-search-current-command com
-                                     minibuffer-toggle-search-initial-string string)
-                               (call-interactively com))
-                       command)
-          (minibuffer-quit-recursive-edit)
-          )))
-     ((stringp minibuffer-toggle-search-initial-string)
-      (insert minibuffer-toggle-search-initial-string)
-      (setq minibuffer-toggle-search-initial-string nil))
-     (t
-      (setq minibuffer-toggle-search-initial-string nil)
-      (setq minibuffer-toggle-search-current-command this-command)
-      (let ((alist (mapcar (lambda (x) (with-minibuffer-selected-window
-                                         (eval x 'lexical)))
-                           (alist-get this-command
-                                      minibuffer-toggle-search-command-alist))))
-        (when-let* ((initial (plist-get alist :initial))
-                    (str (with-minibuffer-selected-window
-                           (cond ((functionp initial)
-                                  (funcall initial))
-                                 ((stringp initial)
-                                  initial)
-                                 ((listp initial)
-                                  (seq-some (lambda (s)
-                                              (thing-at-point s t))
-                                            initial))
-                                 (t
-                                  (thing-at-point initial t))))))
-          (delete-minibuffer-contents)
+  (when-let* (((and (minibufferp) (equal 'minibuffer-toggle-search this-command)))
+              (alist (minibuffer-toggle-search-alist-get minibuffer-toggle-search-current-command))
+              (command (plist-get alist :toggle))
+              (string (minibuffer-contents-no-properties)))
+    ;; (let ((old-pre (plist-get alist :prefix))
+    ;;       (new-pre (plist-get (minibuffer-toggle-search-alist-get command) :prefix)))
+    ;;   (cond (old-pre
+    ;;          (setq string (replace-regexp-in-string (concat "^" old-pre) (or new-pre "") string)))
+    ;;         (new-pre
+    ;;          (setq string (concat new-pre string)))))
+    (setq string (substring string (length (plist-get alist :prefix))))
+    (if (commandp command)
+        (run-at-time 0 nil (lambda (com)
+                             (setq this-command com
+                                   minibuffer-toggle-search-current-command com
+                                   minibuffer-toggle-search-initial-string string)
+                             (unwind-protect
+                                 (command-execute com)
+                               (setq this-command nil
+                                     minibuffer-toggle-search-current-command nil
+                                     minibuffer-toggle-search-initial-string nil)))
+                     command)
+      (user-error "`%s' not a command. error in alist `%s' :toggle ."
+                  command minibuffer-toggle-search-current-command))
+    (minibuffer-quit-recursive-edit)))
+
+(defun minibuffer-toggle-search-alist-get(&optional cmd)
+  "获取定义的`CMD'属性."
+  (with-minibuffer-selected-window
+    (mapcar (lambda (x)
+              (eval x 'lexical))
+            (alist-get (or cmd real-this-command)
+                       minibuffer-toggle-search-command-alist))))
+(defun minibuffer-toggle-search-initial()
+  "插入预定义的初始化文本."
+  (setq minibuffer-toggle-search-current-command this-command)
+  (if-let ((string minibuffer-toggle-search-initial-string))
+      (or (not (stringp string)) (setq minibuffer-toggle-search-initial-string nil) (insert string))
+    (when-let* ((alist (minibuffer-toggle-search-alist-get))
+                (initial (plist-get alist :initial))
+                (str (with-minibuffer-selected-window
+                       (cond ((functionp initial)
+                              (funcall initial))
+                             ((stringp initial)
+                              initial)
+                             ((listp initial)
+                              (seq-some (lambda (s)
+                                          (thing-at-point s t))
+                                        initial))
+                             (t
+                              (thing-at-point initial t))))))
+
+      (when (plist-get alist :override)
+          (delete-region (+ (length (plist-get alist :prefix)) (minibuffer-prompt-end)) (point-max)))
+
+      (if (or (plist-get alist :default)
+              (and (not (plist-member alist :default))
+                   minibuffer-toggle-search-default-text))
           (save-excursion
-            (insert (propertize str 'face 'shadow)))
-          (add-hook 'pre-command-hook 'minibuffer-ts-del-default-contents)
-          )))
-     )))
+            (add-hook 'pre-command-hook 'minibuffer-toggle-search-del-default-contents)
+            (insert (propertize str 'face 'minibuffer-toggle-search-default-text-face)))
+        (insert str))
+      )))
 
-;; 获取定义的命令属性
-(defun minibuffer-ts-alist-get(&optional cmd)
-  ""
-  (mapcar (lambda (x) (with-minibuffer-selected-window
-                        (eval x 'lexical)))
-          (alist-get (or cmd this-command)
-                     minibuffer-toggle-search-command-alist)))
-;; 插入预定义的初始化文本
-(defun minibuffer-ts-initial()
-  ;; (setq minibuffer-toggle-search-initial-string nil)
-  ;; (setq minibuffer-toggle-search-current-command this-command)
-  (when-let* ((alist (minibuffer-ts-alist-get))
-              (initial (plist-get alist :initial))
-              (str (with-minibuffer-selected-window
-                     (cond ((functionp initial)
-                            (funcall initial))
-                           ((stringp initial)
-                            initial)
-                           ((listp initial)
-                            (seq-some (lambda (s)
-                                        (thing-at-point s t))
-                                      initial))
-                           (t
-                            (thing-at-point initial t))))))
-
-    (delete-region (+ (length (plist-get alist :prefix)) (minibuffer-prompt-end)) (point-max))
-
-    (if (or (plist-get alist :default)
-            (and (not (plist-member alist :default))
-                 minibuffer-toggle-search-default-text))
-        (save-excursion
-          (add-hook 'pre-command-hook 'minibuffer-ts-del-default-contents)
-          (insert (propertize str 'face 'minibuffer-toggle-search-default-text-face)))
-      (insert str))
-    ))
-;; 默认文本自动删除
-(defun minibuffer-ts-del-default-contents()
+(defun minibuffer-toggle-search-del-default-contents()
+  "默认文本自动删除."
   (cond ((member this-command '(self-insert-command
                                 yank))
-         (remove-hook 'pre-command-hook 'minibuffer-ts-del-default-contents)
+         (remove-hook 'pre-command-hook 'minibuffer-toggle-search-del-default-contents)
          (when (minibufferp)
            (delete-region (point) (point-max))))
         ((member this-command '(previous-line
@@ -181,9 +184,19 @@ pairs."
                                 vertico-next
                                 vertico-previous)))
         (t
-         (remove-hook 'pre-command-hook 'minibuffer-ts-del-default-contents)
+         (remove-hook 'pre-command-hook 'minibuffer-toggle-search-del-default-contents)
          (when (minibufferp)
            (put-text-property (point) (point-max) 'face 'default)))))
 
-(add-hook 'minibuffer-setup-hook 'minibuffer-ts-initial)
-(remove-hook 'minibuffer-setup-hook 'minibuffer-toggle-search)
+(add-hook 'minibuffer-setup-hook 'minibuffer-toggle-search-initial 100)
+(remove-hook 'minibuffer-setup-hook 'minibuffer-ts-initial)
+
+(define-minor-mode minibuffer-toggle-search-mode
+  "Insert initialized text in the mini buffer, switch the current search to another search."
+  :global t
+  (if minibuffer-toggle-search-mode
+      (add-hook 'minibuffer-setup-hook 'minibuffer-toggle-search-initial)
+    (remove-hook 'minibuffer-setup-hook 'minibuffer-toggle-search-initial)))
+
+(provide 'minibuffer-toggle-search)
+;;; minibuffer-toggle-search.el ends here.
