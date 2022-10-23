@@ -104,6 +104,7 @@ Example: (minibuffer-toggle-search-customize
 ;;  :default t
 ;;  :initial (thing-at-point 'symbol t)
 ;;  )
+;;;###autoload
 (defun minibuffer-toggle-search ()
   "Search in current buffer or current directory.
 toggle to search in all buffer or up directory."
@@ -141,6 +142,8 @@ toggle to search in all buffer or up directory."
               (eval x 'lexical))
             (alist-get (or cmd real-this-command)
                        minibuffer-toggle-search-command-alist))))
+
+;;;###autoload
 (defun minibuffer-toggle-search-initial()
   "插入预定义的初始化文本."
   (setq minibuffer-toggle-search-current-command this-command)
@@ -172,6 +175,7 @@ toggle to search in all buffer or up directory."
         (insert str))
       )))
 
+;;;###autoload
 (defun minibuffer-toggle-search-del-default-contents()
   "默认文本自动删除."
   (cond ((member this-command '(self-insert-command
@@ -191,6 +195,7 @@ toggle to search in all buffer or up directory."
 (add-hook 'minibuffer-setup-hook 'minibuffer-toggle-search-initial 100)
 (remove-hook 'minibuffer-setup-hook 'minibuffer-ts-initial)
 
+;;;###autoload
 (define-minor-mode minibuffer-toggle-search-mode
   "Insert initialized text in the mini buffer, switch the current search to another search."
   :global t
