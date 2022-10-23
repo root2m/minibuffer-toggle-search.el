@@ -105,9 +105,10 @@ Example: (minibuffer-toggle-search-customize
 ;;  :initial (thing-at-point 'symbol t)
 ;;  )
 ;;;###autoload
-(defun minibuffer-toggle-search ()
+(defun minibuffer-toggle-search (&optional argu)
   "Search in current buffer or current directory.
-toggle to search in all buffer or up directory."
+toggle to search in all buffer or up directory.
+if single argument, goback search."
   (interactive "P")
   (when-let* (((and (minibufferp) (equal 'minibuffer-toggle-search this-command)))
               (alist (minibuffer-toggle-search-alist-get minibuffer-toggle-search-current-command))
